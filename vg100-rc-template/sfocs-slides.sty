@@ -1,0 +1,628 @@
+\NeedsTeXFormat{LaTeX2e}[1994/06/01]
+\ProvidesPackage{sfocs-slides}[2025/07/25 SilverFOCS theme for lslides with code support]
+
+% colors 
+\RequirePackage{xcolor}
+
+\definecolor{global}{HTML}{5BC346}
+\definecolor{tech}{HTML}{FaAA33}
+\definecolor{com}{HTML}{f690ff}
+\definecolor{game}{HTML}{5db8ef}
+
+% package options 
+\RequirePackage{xkeyval}
+
+% xkeyval already loaded by lslides
+\define@boolkey{sfocs-slides.sty}[sfocsslides@]{global}[true]{}
+\define@boolkey{sfocs-slides.sty}[sfocsslides@]{tech}[true]{}
+\define@boolkey{sfocs-slides.sty}[sfocsslides@]{com}[true]{}
+\define@boolkey{sfocs-slides.sty}[sfocsslides@]{game}[true]{}
+
+% default to global
+\ExecuteOptionsX{global}
+\ProcessOptionsX
+
+\ifsfocsslides@global
+	\colorlet{topic}{global}\def\topic{global}
+\fi
+
+\ifsfocsslides@tech
+	\colorlet{topic}{tech}\def\topic{tech}
+\fi
+
+\ifsfocsslides@com
+	\colorlet{topic}{com}\def\topic{com}
+\fi
+
+\ifsfocsslides@game
+	\colorlet{topic}{game}\def\topic{game}
+\fi
+
+% fonts 
+
+\RequirePackage{ifxetex,ifluatex}
+\newif\ifxetexorluatex
+\ifxetex
+	\xetexorluatextrue
+\else
+	\ifluatex
+		\xetexorluatextrue
+	\else
+		\xetexorluatexfalse
+	\fi
+\fi
+
+\RequirePackage[USenglish]{babel}
+
+% sans math
+\RequirePackage{cmbright}
+\RequirePackage[cm]{sfmath}
+
+\usefonttheme{professionalfonts}
+
+\ifxetexorluatex
+
+	\RequirePackage{fontspec}
+	\setmainfont{CMU Sans Serif}
+	\setsansfont{CMU Sans Serif}
+	\setmonofont[Scale=.9]{CMU Typewriter Text}
+
+	\ifxetex
+		\RequirePackage{xeCJK}
+		\setCJKsansfont{AR PL UKai TW MBE:style=Book}
+	\else
+		\RequirePackage{luatexja-fontspec}
+		\setsansjfont{AR PL UKai TW MBE:style=Book}
+	\fi
+\fi
+
+% colortheme based on topic package option
+\definecolorset{rgb}{}{color}{slidebg,.18,.24,.3;slidefg,.9,.9,.9;titlebgtop,.55,.55,.65}
+
+\definecolorset{rgb}{}{color}{slidebg,.18,.24,.3;slidefg,.9,.9,.9;titlebgtop,.55,.55,.65}
+\colorlet{titlebgcolor}{slidebgcolor!75!black}
+\colorlet{secbgcolor}{topic}
+\colorlet{secfgcolor}{slidebgcolor}
+\colorlet{chapfgcolor}{secfgcolor}
+\colorlet{chapbgcolor}{secbgcolor}
+\colorlet{keybgcolor}{topic!75!black}
+\colorlet{keyfgcolor}{slidefgcolor}
+\colorlet{tocbgcolor}{secbgcolor}
+\colorlet{tocfgcolor}{secfgcolor}
+\colorlet{titlefgcolor}{slidefgcolor}
+\colorlet{structbgcolor}{secbgcolor}
+\colorlet{structfgcolor}{slidebgcolor}
+\colorlet{ucolor}{secbgcolor!50}
+
+% images 
+\RequirePackage{graphicx}
+\graphicspath{{../assets/}{../pitch-diagram}{../poster}}
+\def\assetspath{../assets/}
+
+\IfFileExists{\assetspath/progress.pdf}{\def\logo{\assetspath/progress}}{\def\logo{SF-head}}
+
+\RequirePackage{tikz}
+\usetikzlibrary{shapes,calc,shadings,shadows,positioning,fit,spy}
+
+% beamer setup 
+\setbeamertemplate{navigation symbols}{}
+\useinnertheme{circles}
+\setbeamersize{text margin left=.5cm}
+\setbeamersize{text margin right=.5cm}
+
+\setbeamercolor*{item projected}{bg=structbgcolor!75!bg,fg=slidebgcolor}
+\setbeamercolor{itemize item}{fg=structbgcolor!75!bg}
+\setbeamercolor{itemize subitem}{fg=structbgcolor!75!bg}
+\setbeamercolor{itemize subsubitem}{fg=structbgcolor!75!bg}
+\setbeamercolor{description item}{fg=structbgcolor}
+
+% easily change slide colors 
+\newcommand{\setslidecolor}[2][]{
+	\ifx#1\empty\relax
+	\else
+		\setbeamercolor*{palette tertiary}{#1}
+		\setbeamertemplate{frametitle}[ftitle]
+	\fi
+	\setbeamercolor*{palette primary}{#2}
+	\usebeamercolor*{palette primary}
+	\setbeamertemplate{background canvas}[default]
+}
+
+% reset to default colors
+\newcommand{\resetslidecolor}{
+	\setbeamercolor*{palette tertiary}{fg=structfgcolor,bg=structbgcolor}
+	\setbeamercolor*{palette primary}{fg=slidefgcolor,bg=slidebgcolor}
+	\usebeamercolor[fg]{palette primary}
+	\setbeamertemplate{background canvas}[default]
+	% reset bg layer, eg. pic was added
+	\setbeamertemplate{background}{}
+}
+
+% compute img height based on width, option scale param
+\newcommand*{\picheight}[3][1]{
+	\newdimen\imageheight
+	\settoheight{\imageheight}{%
+		\includegraphics[width=#3,keepaspectratio]{#2}%
+	}
+	\pgfmathsetmacro{\imgh}{#1*1pt/1cm*\imageheight}
+}
+
+% section reference
+\RequirePackage{zref-titleref}
+
+% swicth to zref as default label/ref method
+\AtBeginDocument{
+	\let\label=\zref@label
+}
+
+%
+% beamer templates
+%
+
+% title page
+\defbeamertemplate*{title page}{sfocs-titlepage}{
+	\begin{tikzpicture}[remember picture,overlay]
+		\hypersetup{urlcolor=topic}
+		\fill[slidebgcolor!85] (current page.north east) rectangle (current page.south west);
+		\clip (current page.north west) rectangle (current page.south east);
+		\fill[titlebgtopcolor!80] (current page.north west) -- ($(current page.west)+(0,.1)$) --
+		($(current page.west)+(2,.7)$) -- ($(current page.west)+(3,.15)$) -- ($(current
+		page.east)+(-3,.15)$) -- ($(current page.east)+(-2,.7)$) -- ($(current
+		page.east)+(0,.1)$) -- (current page.north east) -- cycle;
+
+		\node at ($(current page.center)+(0,-.75)$)	{\includegraphics[scale=.96]{joystick}};
+		\node[structbgcolor,font=\Large\bf] at ($(current page.center)+(0,-.85)$) {\href{http://focs.ji.sjtu.edu.cn/silverfocs}{S-FOCS (\topic)}};
+		\node[black!80,font=\fontsize{38}{46}\bf,align=center] at	($(current page.north)+(0,-1.85)$) {SilverFOCS\\Incubator};
+		\node[structbgcolor!50,font=\fontsize{20}{24}\em,align=center, text width=.95\paperwidth] at ($(current	page.center)+(0,-2.675)$) {\inserttitle};
+
+		\node[anchor=east,topic,font=\scriptsize] at ($(current page.south east)+(0,.25)$) {\insertauthor};
+		\node[anchor=west,topic,font=\scriptsize] at ($(current page.south west)+(0,.25)$) {\insertdate};
+	\end{tikzpicture}
+}
+
+% template for last frame
+\setbeamertemplate{sfocs-tksframe}{
+	\tikz[remember picture,overlay] \node[text=structbgcolor,anchor=east] at ($(current page.south east)+(-.25,.5)$) {Thank you!};
+    % \tikz[remember picture,overlay] \node[text=structbgcolor,anchor=west] at ($(current page.south west)+(.25,.5)$) {Thanks for Prof. Manuel for the template!};
+}
+
+% section pages
+\usepackage{totcount}
+
+\regtotcounter{section}
+\newcounter{totsec}
+\newcounter{tsec}
+
+\newcommand*{\splitsections}[1][\inserttitle]{
+	\setcounter{totsec}{\totvalue{section}}
+	\setcounter{tsec}{\thetotsec}
+	\stepcounter{tsec}
+	\ifnum\thetotsec>0
+		\begin{tikzpicture}[remember picture,overlay]
+			\fill[secfgcolor] (current page.north west) rectangle ($(current page.south	east)+(0,3)$);
+			\node[secfgcolor,inner sep=0pt,font=\Large,align=center,text width=5cm] at ($(current page.south west)+(2.6,1.5)$) {#1};
+			\draw[ultra thin] ($(current page.south west)+(5.2,2.65)$) -- ($(current page.south west)+(5.2,.35)$);
+			\pgfmathsetmacro{\secspace}{3.5/\thetsec}
+			\foreach \i in {1,...,\thetotsec}{
+					\ifnum \i=\thesection
+						\node[text=secfgcolor!5,inner sep=0pt,anchor=west,align=left,text width=7.2cm] at ($(current page.south west)+(5.4,3.25-\i*\secspace)$) {\hyperlink{sec:\thepart:\i}{\ztitleref{sec:\thepart:\i}}};
+					\else
+						\node[text=secfgcolor,inner sep=0pt,anchor=west,align=left,text width=7.2cm] at ($(current page.south west)+(5.4,3.25-\i*\secspace)$) {\hyperlink{sec:\thepart:\i}{\ztitleref{sec:\thepart:\i}}};
+					\fi
+				}
+			\node[font=\fontsize{50}{55}\selectfont,text=secbgcolor!80!black!60,align=center,text	width=.95\paperwidth] at ($(current page.center)+(0,1.5)$) {\ztitleref{sec:\thepart:\thesection}};
+		\end{tikzpicture}
+	\fi
+}
+
+\defbeamertemplate*{section page}{sfocs-sectionpage}{
+	\splitsections
+}
+
+
+%
+% special slides
+%
+
+% displayed at the start of asection
+\AtBeginSection[]  {
+	\setbeamercolor*{palette primary}{fg=secfgcolor,bg=secbgcolor}
+	\setbeamercolor*{palette tertiary}{fg=secfgcolor,bg=secbgcolor}
+	\usebeamercolor[fg]{palette primary}
+	\setbeamertemplate{background canvas}[plain-section][secbgcolor]
+
+	\begin{frame}[label={sec:\thepart:\thesection}]{}
+		\sectionpage
+	\end{frame}
+
+	\setbeamercolor*{palette primary}{fg=slidefgcolor,bg=slidebgcolor}
+	\setbeamercolor*{palette tertiary}{fg=structfgcolor,bg=structbgcolor}
+	\usebeamercolor[fg]{palette primary}
+	\setbeamertemplate{background canvas}[plain-slide][slidebgcolor]
+}
+
+% black bg, free full slide content
+\newenvironment{framem}[2][]{
+	\setbeamertemplate{background canvas}[plain-slide]
+	\setbeamercolor*{palette primary}{fg=white!80!black,bg=black}
+	\usebeamercolor[fg]{palette primary}
+	% \setbeamercolor*{palette tertiary}{fg=white!75!black,bg=black}
+	\hypersetup{urlcolor=.}
+	\begin{frame}[fragile,environment=framem,#1]{#2}
+		}{
+	\end{frame}
+}
+
+% black bg, full slide pic
+\newenvironment{framef}[2][center]{
+	\setbeamertemplate{background canvas}[plain-slide]
+	\setbeamercolor*{palette primary}{fg=white!80!black,bg=black}
+	\usebeamercolor[fg]{palette primary}
+	\hypersetup{urlcolor=.}
+	\begin{frame}[environment=framef,plain]
+		\begin{tikzpicture}[remember picture,overlay]
+			\node[black,inner sep=0,anchor=#1] at (current page.#1) {\includegraphics[height=\paperheight,width=\paperwidth,keepaspectratio]{#2}};
+		\end{tikzpicture}
+		}{
+	\end{frame}
+}
+
+
+% summary slide with key points
+\newenvironment{framek}[1][Highlights]{
+	\setbeamertemplate{footline}[empty]
+	\setbeamercolor*{palette primary}{fg=keyfgcolor,bg=keybgcolor}
+	\setbeamertemplate{background canvas}[default]
+	\begin{frame}[environment=framek]{#1}
+		}{
+	\end{frame}
+}
+
+% last frame (thanks)
+\newcommand*{\thankframe}{
+	\setbeamertemplate{footline}[empty]
+	\setbeamercolor*{palette primary}{fg=titlefgcolor,bg=titlebgcolor}
+	\usebeamercolor[fg]{palette primary}
+	\setbeamertemplate{background canvas}[plain-slide]
+	\frame{\usebeamertemplate{sfocs-tksframe}}
+}
+
+
+%
+% frametitle
+%
+
+\tikzset{
+	pics/ftitlehorizshading/.style args={#1/#2}{code={
+					\pgfdeclarehorizontalshading{horizshading}{#2} {color(0cm)=(#1!90!black); color(\the\paperwidth)=(#1)}
+					\node[anchor=north west,inner sep=0,outer sep=0] at (current page.north west) {\pgfuseshading{horizshading}};
+				}
+		},
+	pics/logo/.style args={#1/#2}{code={
+					\pgfmathsetmacro{\imghh}{-.5*\imgh}
+					\pgfmathsetmacro{\sdone}{\imgh*(\insertframenumber/\inserttotalframenumber)+\imghh}
+
+					% logo_e must be available for xetex (opacity not supported)
+					\IfFileExists{\logo_e.pdf}{\def\logoe{\logo_e}\def\logoo{1}}{\def\logoe{\logo}\def\logoo{.4}}
+
+					\node[opacity=\logoo] at (.1625,0) {\includegraphics[width=.6cm,height=.5cm,keepaspectratio]{\logoe}};
+					\begin{scope}
+						\clip (-.3,\imghh) rectangle (.5,\sdone);
+						\node (logo) at (.1625,0) {\includegraphics[width=.6cm,height=.5cm,keepaspectratio]{\logo}};
+					\end{scope}
+				}
+		},
+}
+
+\defbeamertemplate*{frametitle}{ftitle}[1][1]{
+	% compute logo size	
+	\picheight{\logo}{.6cm}
+	\nointerlineskip
+	\begin{beamercolorbox}[wd=\paperwidth,ht=.65cm]{frametitle}
+		\begin{tikzpicture}[remember picture,overlay]
+			\path (current page.north west) pic {ftitlehorizshading=bg/.65cm};
+			\path ($(current page.north west)+(.325,-.325)$) pic {logo=3/1};
+			\node[anchor=east,align=right,font=\large\vphantom{Ag},inner sep=0pt] at ($(current page.north east)+(-.325,-.325)$) {\insertframetitle\par};
+		\end{tikzpicture}
+	\end{beamercolorbox}
+}
+
+
+\defbeamertemplate*{background canvas}{plain-slide}[1][bg] {
+	\begin{pgfpicture}{0cm}{0cm}{\paperwidth}{\paperheight}
+		\color{#1}
+		\pgfpathrectangle{\pgfpointorigin}{\pgfpoint{\paperwidth}{\paperheight}}
+		\pgfusepath{fill}
+	\end{pgfpicture}
+}
+
+\defbeamertemplatealias{background canvas}{plain-section}{plain-slide}
+\defbeamertemplatealias{background canvas}{plain-toc}{plain-slide}
+\defbeamertemplatealias{background canvas}{plain-keypoints}{plain-slide}
+
+%  beamer palettes setup 
+\setbeamercolor*{palette primary}{fg=slidefgcolor,bg=slidebgcolor}
+\setbeamercolor*{normal text}{parent=palette primary}
+\setbeamercolor*{itemize/enumerate body}{parent=palette primary}
+\setbeamercolor*{background canvas}{parent=palette primary}
+
+\setbeamercolor*{palette secondary}{use=palette primary,fg=palette primary.bg!60!palette primary.fg}
+\setbeamercolor*{local structure}{parent=palette secondary}
+
+\setbeamercolor*{palette tertiary}{fg=structfgcolor,bg=structbgcolor}
+\setbeamercolor*{structure}{parent=palette tertiary}
+\setbeamercolor*{alerted text}{parent=palette tertiary,fg=structbgcolor}
+
+%
+% basic aesthetics fixes (mainly spacing)
+%
+
+% beamer item with wider space
+\RequirePackage{xpatch}
+
+\xpatchcmd{\itemize}{\def\makelabel}{
+	\ifnum\@itemdepth=1\relax
+		\setlength\itemsep{.25cm}% separation for first level
+		\setlength\topsep{.125cm}% separation for first level
+	\else
+		\ifnum\@itemdepth=2\relax
+			\setlength\itemsep{.125cm}% separation for second level
+			\setlength\topsep{.125cm}% separation for first level
+		\else
+			\ifnum\@itemdepth=3\relax
+				\setlength\itemsep{0.5ex}% separation for third level
+			\fi
+		\fi
+	\fi
+	\def\makelabel
+}{}{}
+
+% justify items
+\RequirePackage{ragged2e}
+\xpatchcmd{\itemize}{\raggedright}{\justifying}{}{}
+
+% justify columns
+\renewcommand<>\beamer@columncom[2][\beamer@colmode]{%
+	\beamer@colclose%
+	\def\beamer@colclose{\end{minipage}\hfill\end{actionenv}\ignorespaces}%
+	\begin{actionenv}#3%
+	\setkeys{beamer@col}{#1}%
+	\begin{minipage}[\beamer@colalign]{#2}%
+	\leavevmode\justifying\beamer@colheadskip\ignorespaces}
+
+%justify text in frame
+\apptocmd{\frame}{}{\justifying}{}
+
+% enumerate based on list + without \newcommand (beamer/beamerbaselocalstructure.sty)
+\def\@llisti{\leftmargin\leftmargini
+	\topsep 3\p@ \@plus2\p@ \@minus2.5\p@
+	\parsep 0\p@
+	\itemsep.25cm \@plus2\p@ \@minus3\p@
+}
+\def\@llistii{\leftmargin\leftmarginii
+	\topsep 3\p@ \@plus2\p@ \@minus2.5\p@
+	\parsep 0\p@
+	\itemsep.125cm \@plus1\p@ \@minus2\p@
+}
+\let\@listI\@llisti
+\let\@listii\@llistii
+
+\newcommand{\hugeskip}{\vspace{.5cm}}
+\newcommand*{\nosep}{\itemsep 1pt\vspace{-.125cm}}
+\newcommand*{\smallsep}{\itemsep .125cm}
+\newcommand*{\medsep}{\itemsep .25cm\smallskip}
+\newcommand*{\bigsep}{\itemsep .5cm\medskip}
+\newlength{\halfwidth}
+\setlength{\halfwidth}{.5\columnwidth}
+
+% hyperref
+\hypersetup{colorlinks=true, linkcolor=., urlcolor=ucolor}
+
+% misc packages
+\RequirePackage{booktabs,multirow}
+
+\RequirePackage{multicol} % useful to easily split itemize env
+\setlength\multicolsep{.125cm}
+
+% atendocument frames (thanks + sources) not counted + not seen by pgfpages 
+\newcommand*{\fixenddocument}{%
+	\immediate\write\@auxout{%
+		\string\@writefile{nav}{\noexpand\headcommand{\noexpand\beamer@documentpages{\the\c@framenumber}}}
+		\string\@writefile{nav}{\noexpand\headcommand{\noexpand\gdef\noexpand\inserttotalframenumber{\the\c@framenumber}}}
+	}
+}
+
+
+% automatically add thank frame
+\AtEndDocument{%
+	\thankframe%
+	\fixenddocument%
+}
+
+\newcommand{\important}[1]{
+	\begin{columns}\column{\paperwidth}
+		\tikz \node[rectangle,fill=structbgcolor,minimum width=\paperwidth,minimum height=1cm,align=center,text width=.9\paperwidth,font=\Large] {#1};
+	\end{columns}
+}
+
+
+% used to automatically calculate the size of pics
+\usepackage{calc}
+
+\newlength{\heighti}
+\newlength{\heightii}
+\newlength{\heightiii}
+\setlength{\heighti}{\paperheight-.65cm} %total height minus banner height 
+\setlength{\heightii}{.5\heighti}
+\setlength{\heightiii}{.3333333\heighti}
+
+\newlength{\widthi}
+\newlength{\widthii}
+\newlength{\widthiii}
+\setlength{\widthi}{\paperwidth} %total width minus banner width 
+\setlength{\widthii}{.5\widthi}
+\setlength{\widthiii}{.3333333\widthi}
+
+\newcommand{\settrans}[1][100]{\gdef\transparent@value{#1}}
+\newcommand{\fadedpic}[3][]{% 
+	\only<1>{\settrans}\only<2->{\settrans[30]}%
+	\begin{tikzpicture}[remember picture, overlay]
+		\node[inner sep=0pt, outer sep=0pt,opacity=\transparent@value/100] (fadedpic) at ($(current page.center -| .5\columnwidth,0)-(0,.5\baselineskip+.075cm)$)   {\includegraphics[#1]{#2}};
+		\node[below= .15cm of fadedpic, align=center, text width=\columnwidth,opacity=\transparent@value/100] {#3};
+	\end{tikzpicture}
+}
+
+\newcommand{\fffadedpic}[2][]{% 
+	\setbeamertemplate{background canvas}[plain-slide]
+	\setbeamercolor*{palette primary}{fg=white!80!black,bg=black}
+	\only<1>{\settrans}\only<2->{\settrans[50]}%
+	\begin{tikzpicture}[remember picture, overlay]
+		\node[black,inner sep=0pt, outer sep=0pt,opacity=\transparent@value/100] (fadedpic) at (current page.center)   {\includegraphics[#1]{#2}};
+	\end{tikzpicture}
+}
+
+\newcommand{\includetrailer}[1]{\tikz[remember picture, overlay]\node at (current page.center) {\href{run:\assetspath#1.mp4}{\XeTeXLinkBox{\includegraphics[width=\paperwidth,keepaspectratio]{#1}}}};}
+
+% \RequirePackage{codebox}
+%
+% \tcbuselibrary{skins,raster,breakable,xparse}
+%
+% % \DeclareTCBListing{codetbox}{ O{\small} m }{
+% % 	codetbox=#1,minted language=#2,minted style=friendly,   colback=black!8,colframe=black!88,coltext=black,overlay={
+% % 			\begin{tcbclipinterior}\fill[white!75!black] (frame.south west)rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+% % 		}
+% % }
+% \DeclareTCBListing{codetbox}{ s O{\small} m !O{} !O{}}{
+% enhanced,breakable,fontupper=#2,title=#4,hwcode,minted language=#3,#5,
+% IfBooleanTF={#1}{minted options={tabsize=2}}{minted options={numbersep=2mm,tabsize=2}}
+% }
+%
+% \ProvideTCBInputListing{\codefbox}{ s O{c} m m !O{}}{hwcode,listing file={#4},minted language=#2,title=#3,,   enhanced, #5,
+% IfBooleanTF={#1}{minted options={tabsize=2},}{minted options={linenos,numbersep=2mm,tabsize=2}}%
+% }
+%
+% \tcbset{
+% 	listing engine=minted,
+% 	exbox/.style n args={2}{
+% 			enhanced jigsaw,fonttitle=\large\bf,attach boxed title to top center={yshift=-3mm,yshifttext=-1mm},colframe=#1,colback=#2,colbacktitle=white,coltitle=#1,arc=0mm,boxrule=0mm,bottomrule=2pt,toprule=2pt,boxed title style={arc=2pt,arc is angular},
+% 		},
+% 	hwcode/.style={
+% 			listing only, listing engine=minted, minted style=manni,
+% 			exbox={orange!90!black}{yellow!5}, coltext=black,
+% 		}
+% }
+
+% path of files in lecture slides
+	\def\codepath{code/}
+
+% hide cached minted code
+% WARNING: latexmk is asked to compile in .lmk => manually adjust outputdir
+%\PassOptionsToPackage{cache=true,cachedir=minted_\jobname,outputdir=.lmk}{minted}
+\PassOptionsToPackage{cache=true,cachedir=minted_\jobname}{minted}
+
+% colorboxes
+\RequirePackage{tcolorbox}
+\tcbuselibrary{breakable,listingsutf8,minted,skins,raster,xparse}
+\tcbset{
+	cs/.style={
+		listing engine=minted,
+		fonttitle=\small,
+		fontlower=\small,
+		enhanced,left=1mm,top=.1cm, right=.1cm, bottom=.1cm,
+	},
+	csfbox/.style={
+		enhanced jigsaw, cs, listing only,	left=6mm,top=.1cm, right=.1cm, bottom=.1cm, 
+		minted options={fontsize=#1,linenos,numbersep=3mm,tabsize=2},
+		minted style=manni,	colback=white,colframe=black!83,coltext=black,
+	},
+	codetbox/.style={
+		cs,listing only, left=6mm,top=.1cm, right=.1cm, bottom=.1cm,
+		minted options={fontsize=#1,linenos,numbersep=3mm,tabsize=2},
+	},
+	docbox/.style={
+		cs,minted options={fontsize=#1,tabsize=2}
+	}
+}
+
+% line numbers 
+\renewcommand{\theFancyVerbLine}{\sffamily\scriptsize\oldstylenums{\arabic{FancyVerbLine}}}
+
+% code from file
+%\newtcbinputlisting{\csfbox}[4][\small]{
+%	csfbox=#1,title=#2,listing file={\codepath #3},minted language=#4,%overlay={
+%		\begin{tcbclipinterior}\fill[black!15!white] (frame.south west)	rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+%	}
+%}
+
+% * version is breakable -> incompatible with rasterbox 
+\DeclareTCBInputListing{\csfbox}{s O{\small} m m m }{
+	\IfBooleanTF#1{breakable}{},
+	csfbox=#2,title=#3,listing file={\codepath #4},minted language=#5,overlay={
+		\begin{tcbclipinterior}\fill[black!15!white] (frame.south west)	rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior},
+	}
+}
+
+% auto detect current file type based on its extension
+% need % at end of line to prevent raster to fail
+\newcommand{\filetype}[1]{%
+\IfSubStr{#1}{Makefile}{\def\ftype{make}}{%
+\IfEndWith{#1}{.cpp}{\def\ftype{c++}}{%
+\IfEndWith{#1}{.h}{\def\ftype{c++}}{%
+\IfEndWith{#1}{.c}{\def\ftype{c}}{%
+\IfEndWith{#1}{.m}{\def\ftype{matlab}}{%
+\IfEndWith{#1}{.py}{\def\ftype{python}}{%
+\IfEndWith{#1}{.sty}{\def\ftype{latex}}{%
+\IfEndWith{#1}{.tex}{\def\ftype{latex}}{%
+\IfEndWith{#1}{.elm}{\def\ftype{elm}}{%
+\def\ftype{R}%
+}}}}}}}}}}
+
+% minted fix (https://github.com/gpoore/minted/issues/354)
+\def\minted@opt@quote#1{\detokenize\expandafter{\expandafter'\expanded{#1}'}}
+
+% * version is breakable -> incompatible with rasterbox 
+\NewDocumentCommand{\codefbox}{ s O{\small} m }{%
+	\filetype{#3}\def\file{#3}%
+	\IfBooleanTF#1%
+	{\csfbox*[#2]{\StrSubstitute{\file}{_}{\_}}{#3}{\ftype}}%
+	{\csfbox[#2]{\StrSubstitute{\file}{_}{\_}}{#3}{\ftype}}%
+}
+
+% inline code
+\mode<beamer|trans>{
+	\DeclareTCBListing{codetbox}{ O{\small} m }{
+		codetbox=#1,minted language=#2,minted style=monokai, colback=black!88,colframe=white,coltext=white,	overlay={
+		\begin{tcbclipinterior}\fill[white!25!black] (frame.south west)rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+		}
+	}
+}
+
+\mode<handout>{
+	\DeclareTCBListing{codetbox}{ O{\small} m }{
+		codetbox=#1,minted language=#2,minted style=friendly,	colback=black!8,colframe=black!88,coltext=black,overlay={
+		\begin{tcbclipinterior}\fill[white!75!black] (frame.south west)rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+		}
+	}
+}
+
+
+% doc box
+\DeclareTCBListing{docbox}{ O{\small} m !O{}}{
+	docbox=#1,colframe=black!82.5,sidebyside,lower separated=false,halign lower=left, listing side text,title=#2,#3
+}
+
+% terminal
+\newtcblisting{shbox}[1][sh]{
+	listing inputencoding=utf8,listing engine=listings,colback=black!88,coltext=white,colframe=red!60, left=2mm,top=.1cm, right=.1cm, bottom=.1cm,
+	listing only,listing options={style=tcblatex,language=sh},every listing line={\textcolor{blue!60}{\small\ttfamily\bfseries #1 \$ }}
+}
+
+%\DeclareTotalTCBox{\cmdbox}{ O{red} v O{} }{ fontupper=\ttfamily,nobeforeafter,tcbox raise base,arc=0pt,outer arc=0pt,top=0pt,bottom=0pt,colback=#1!10!white,colframe=#1!50!black,#3}{#2}
+
+\DeclareTotalTCBox{\cmdbox}{ s O{\small} O{sh} v }{verbatim,minted language=sh,minted style=monokai,colback=black!88,colframe=red!60,coltext=white,left=.05cm,top=.05cm, right=.05cm, bottom=.05cm,}{\IfBooleanTF{#1}{}{\textcolor{blue!60}{\ttfamily\bfseries#2\$\;}}\mintinline[fontsize=#2]{#3}{#4}}
+
+% rasterbox
+\newenvironment{rasterbox}[1]{\begin{tcbraster}[raster columns=#1, raster equal height]}{\end{tcbraster}}
+
+
+\endinput

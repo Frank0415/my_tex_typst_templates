@@ -1,0 +1,8 @@
+code
+_minted
+minted_rc
+node_modules
+*.lock
+*.elm
+*.json
+rc_orig.pdf

@@ -1,0 +1,122 @@
+\NeedsTeXFormat{LaTeX2e}[1994/06/01]
+\ProvidesPackage{lslides-cs}[2019/03/30 flexible lecture slides (cs)]
+
+\RequirePackage{cs}
+
+% path of files in lecture slides
+\ifsubfile
+	\def\codepath{./code/}
+\else 
+	\def\codepath{\currfolder/code/}
+\fi
+
+% hide cached minted code
+% WARNING: latexmk is asked to compile in .lmk => manually adjust outputdir
+%\PassOptionsToPackage{cache=true,cachedir=minted_\jobname,outputdir=.lmk}{minted}
+\PassOptionsToPackage{cache=true,cachedir=minted_\jobname}{minted}
+
+% colorboxes
+\RequirePackage{tcolorbox}
+\tcbuselibrary{breakable,listingsutf8,minted,skins,raster,xparse}
+\tcbset{
+	cs/.style={
+		listing engine=minted,
+		fonttitle=\small,
+		fontlower=\small,
+		enhanced,left=1mm,top=.1cm, right=.1cm, bottom=.1cm,
+	},
+	csfbox/.style={
+		enhanced jigsaw, cs, listing only,	left=6mm,top=.1cm, right=.1cm, bottom=.1cm, 
+		minted options={fontsize=#1,linenos,numbersep=3mm,tabsize=2},
+		minted style=manni,	colback=white,colframe=black!83,coltext=black,
+	},
+	codetbox/.style={
+		cs,listing only, left=6mm,top=.1cm, right=.1cm, bottom=.1cm,
+		minted options={fontsize=#1,linenos,numbersep=3mm,tabsize=2},
+	},
+	docbox/.style={
+		cs,minted options={fontsize=#1,tabsize=2}
+	}
+}
+
+% line numbers 
+\renewcommand{\theFancyVerbLine}{\sffamily\scriptsize\oldstylenums{\arabic{FancyVerbLine}}}
+
+% code from file
+%\newtcbinputlisting{\csfbox}[4][\small]{
+%	csfbox=#1,title=#2,listing file={\codepath #3},minted language=#4,%overlay={
+%		\begin{tcbclipinterior}\fill[black!15!white] (frame.south west)	rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+%	}
+%}
+
+% * version is breakable -> incompatible with rasterbox 
+\DeclareTCBInputListing{\csfbox}{s O{\small} m m m }{
+	\IfBooleanTF#1{breakable}{},
+	csfbox=#2,title=#3,listing file={\codepath #4},minted language=#5,overlay={
+		\begin{tcbclipinterior}\fill[black!15!white] (frame.south west)	rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior},
+	}
+}
+
+% auto detect current file type based on its extension
+% need % at end of line to prevent raster to fail
+\newcommand{\filetype}[1]{%
+\IfSubStr{#1}{Makefile}{\def\ftype{make}}{%
+\IfEndWith{#1}{.cpp}{\def\ftype{c++}}{%
+\IfEndWith{#1}{.h}{\def\ftype{c++}}{%
+\IfEndWith{#1}{.c}{\def\ftype{c}}{%
+\IfEndWith{#1}{.m}{\def\ftype{matlab}}{%
+\IfEndWith{#1}{.py}{\def\ftype{python}}{%
+\IfEndWith{#1}{.sty}{\def\ftype{latex}}{%
+\IfEndWith{#1}{.tex}{\def\ftype{latex}}{%
+\IfEndWith{#1}{.elm}{\def\ftype{elm}}{%
+\def\ftype{R}%
+}}}}}}}}}}
+
+% minted fix (https://github.com/gpoore/minted/issues/354)
+\def\minted@opt@quote#1{\detokenize\expandafter{\expandafter'\expanded{#1}'}}
+
+% * version is breakable -> incompatible with rasterbox 
+\NewDocumentCommand{\codefbox}{ s O{\small} m }{%
+	\filetype{#3}\def\file{#3}%
+	\IfBooleanTF#1%
+	{\csfbox*[#2]{\StrSubstitute{\file}{_}{\_}}{#3}{\ftype}}%
+	{\csfbox[#2]{\StrSubstitute{\file}{_}{\_}}{#3}{\ftype}}%
+}
+
+% inline code
+\mode<beamer|trans>{
+	\DeclareTCBListing{codetbox}{ O{\small} m }{
+		codetbox=#1,minted language=#2,minted style=monokai, colback=black!88,colframe=white,coltext=white,	overlay={
+		\begin{tcbclipinterior}\fill[white!25!black] (frame.south west)rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+		}
+	}
+}
+
+\mode<handout>{
+	\DeclareTCBListing{codetbox}{ O{\small} m }{
+		codetbox=#1,minted language=#2,minted style=friendly,	colback=black!8,colframe=black!88,coltext=black,overlay={
+		\begin{tcbclipinterior}\fill[white!75!black] (frame.south west)rectangle ([xshift=5mm]frame.north west);\end{tcbclipinterior}
+		}
+	}
+}
+
+
+% doc box
+\DeclareTCBListing{docbox}{ O{\small} m !O{}}{
+	docbox=#1,colframe=black!82.5,sidebyside,lower separated=false,halign lower=left, listing side text,title=#2,#3
+}
+
+% terminal
+\newtcblisting{shbox}[1][sh]{
+	listing inputencoding=utf8,listing engine=listings,colback=black!88,coltext=white,colframe=red!60, left=2mm,top=.1cm, right=.1cm, bottom=.1cm,
+	listing only,listing options={style=tcblatex,language=sh},every listing line={\textcolor{blue!60}{\small\ttfamily\bfseries #1 \$ }}
+}
+
+%\DeclareTotalTCBox{\cmdbox}{ O{red} v O{} }{ fontupper=\ttfamily,nobeforeafter,tcbox raise base,arc=0pt,outer arc=0pt,top=0pt,bottom=0pt,colback=#1!10!white,colframe=#1!50!black,#3}{#2}
+
+\DeclareTotalTCBox{\cmdbox}{ s O{\small} O{sh} v }{verbatim,minted language=sh,minted style=monokai,colback=black!88,colframe=red!60,coltext=white,left=.05cm,top=.05cm, right=.05cm, bottom=.05cm,}{\IfBooleanTF{#1}{}{\textcolor{blue!60}{\ttfamily\bfseries#2\$\;}}\mintinline[fontsize=#2]{#3}{#4}}
+
+% rasterbox
+\newenvironment{rasterbox}[1]{\begin{tcbraster}[raster columns=#1, raster equal height]}{\end{tcbraster}}
+
+\endinput
