@@ -1,0 +1,844 @@
+\documentclass{beamer}
+
+\usepackage{focs-slides}
+
+\title{eBPF, plugin and Rust}
+\author{p3team01}
+\date{25SP}
+\course{ece482}
+
+% bibliography file
+\addbibresource{project.bib}
+
+% \definecolor{darkblue}{HTML}{6666dd} 
+% \definecolor{darkslategray}{HTML}{2f4f4f} 
+% \definecolor{ebpflightgreen}{HTML}{a3c9c3}
+\definecolor{rustorange}{HTML}{d34516}
+\definecolor{rustthemeorange}{HTML}{df7a4c}
+\definecolor{rustdarkblue}{HTML}{4e4e73}
+\definecolor{rustlightblue}{HTML}{69839d}
+\definecolor{rustspgreen}{HTML}{61784D}
+%\colortheme{green!42!black}
+%\colortheme{orange!85!black}
+%\colortheme{darkblue}
+% \colortheme{pink!80!black}
+%\colortheme{orange!85!white!90!black}
+% \colortheme{darkslategray}
+\colortheme{rustthemeorange}
+
+\begin{document}
+
+\maketitle
+
+% table of contents
+%\toc{enum}
+%\toc{mindmap}
+
+\section{Userspace Rust}
+
+% \begin{frame}{Frame Title}
+%     % Insert image or graphic here
+%     \includegraphics[width=\columnwidth]{repeat2}
+% \end{frame}
+
+\begin{frame}[fragile]{Userspace Rust}
+    By userspace \textcolor{rustorange}{Rust}, Rust code that runs as a wrapper of the eBPF.
+    
+    For this part any eBPF C code can be used as the kernel part, the lottery scheduler is chosen here.
+    \bigskip\raggedright
+    \begin{codetbox}{bash}
+build.rs            -> build script
+Cargo.toml
+/src
+-- bpf_intf.rs      -> shared by C headers
+-- bpf_skel.rs      -> skeleton bindings
+-- main.rs          -> userspace program
+-- stats.rs         -> stats collector
+-- /bpf
+   -- scx_base.bpf.c    -> eBPF C program
+   -- scx_base.h        -> eBPF C header
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Userspace Rust}
+    Rust uses an entirely different build system to build the eBPF.
+    % \bigskip\raggedright
+    \begin{codetbox}{bash}
+scx_cargo::BpfBuilder::new()
+    .unwrap()
+    .enable_intf("src/bpf/scx_base.h", "bpf_intf.rs")
+    .enable_skel("src/bpf/scx_base.bpf.c", "bpf")
+    .build()
+    .unwrap();
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Advantages of Rust}
+Rust here serves simply as a loader of the eBPF program, and a collector of statistics, and it does have some advantages compared to C.
+\medskip
+\begin{itemize}
+    \item Better ecosystem:
+    \begin{itemize}
+        \item Use existing packages for argument parsing, data structures, etc.
+        \item e.g. Using \texttt{circular buffer}, \texttt{serde} and \texttt{csv} for more flexible logging.
+    \end{itemize}
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Advantages of Rust}
+\medskip
+\begin{itemize}
+    \item Better safety and error handling, better atomic variables and strict memory orders all built in, e.g. \mintinline{rust}{Arc{AtomicBool}}, \mintinline{rust}{Ordering::SeqCst}.
+    \item Better build system, without the conflict of header files, especially preprocessor macros.
+    \item \texttt{scx\_stats} contains endpoint for statistics collection, and can be easily extended. (Here this is unused.)
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Disadvantages of Rust}
+    \begin{itemize}
+        \item New language which is hard for beginners (like me). 
+        \begin{itemize}
+            \item Traits, lifetimes, ownership is all touched upon by scx package.
+            \item Async Rust is even harder with its complicated concepts on ownership and lifetimes.
+        \end{itemize}
+        \item Not necessarily safe, as it uses unsafe code to interface C pointers.
+    \end{itemize}
+\end{frame}
+
+% \begin{frame}{Theoretical Benefits}
+%     Placeholder for similarities and explanation.
+%     \medskip\pause
+%     Placeholder for further explanation.
+%     \medskip\pause
+%     \em Placeholder for quote. \em
+% \end{frame}
+
+\section{Interlude: Plugins in C}
+
+\begin{frame}{Plugin Structure}
+
+\begin{columns}[T,onlytextwidth]
+
+	\column{1.5\halfwidth}
+	
+	\centering
+	\includegraphics[width=\columnwidth]{img/2struct.png}
+
+	\column{0.5\halfwidth}
+
+    \bigskip
+    A plugin structure is used to hide away all the complexity of writing anything in eBPF C with restraints.
+    
+\end{columns}
+		
+\end{frame}
+
+\begin{frame}{Basic Ideas}
+    Essentially, to implement a scheduler policy, we need:
+    \begin{itemize}
+        \item A  \mintinline{c}{task_struct} to provide the context of the task to be scheduled.
+    \end{itemize}
+    A scheduler policy only need to provide:
+    \begin{itemize}
+        \item A pid of the process that it decides to run. 
+    \end{itemize}
+
+    \pause\bigskip
+
+    This, combined with the zero-copy \mintinline{c}{BPF_MAP_TYPE_RINGBUF} and \mintinline{c}{BPF_MAP_TYPE_USER_RINGBUF} maps, allows us to efficiently pass data between kernel and userspace.
+\end{frame}
+
+\begin{frame}{Basic Ideas}
+    \centering
+	\includegraphics[width=0.8\linewidth]{img/2part1.png}
+    		
+\end{frame}
+
+\begin{frame}{Issues: Overhead}
+    Although we still need to cross boundaries when we need the userspace to schedule processes, but the overhead of crossing the boundary is much smaller.
+
+    \bigskip
+
+    Still, to schedule a process we still need to cross the boundary twice and call the userspace functions.
+
+    \bigskip\pause
+    
+    To minimize this problem this we can batch the scheduling decisions in the userspace by:
+    \begin{itemize}
+        \item Using a FIFO queue in eBPF to run scheduling decisions.
+        \item Make the userspace supply an array of $n$ pids to be scheduled.
+        \item Under high load, the ratio of scheduler by actual content is roughly $1/n$.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Issues: Deadlock}
+    Another issue is that if the userspace scheduler is not scheduled to run, it cannot make decisions, causing deadlock.
+    \bigskip
+\begin{columns}[T,onlytextwidth]
+
+	\column{1\halfwidth}
+	
+	\centering
+	\includegraphics[width=0.9\columnwidth]{img/2part2.png}
+
+	\column{1\halfwidth}
+
+    Inspired by \href{https://github.com/sched-ext/scx/tree/main/scheds/c}{scx\_userland} scheduler, we make these design:
+
+    \begin{itemize}
+        \item The userspace will pass its PID to the eBPF scheduler.
+        \item The eBPF scheduler will always push that PID to the scheduling queue rather to userspace. 
+        \item Atomic flag is used to notify when there is other task to be scheduled.
+    \end{itemize}
+    
+\end{columns}
+		
+\end{frame}
+
+\begin{frame}[fragile]{Issue: Logging}
+    In order to observe the behavior of the scheduler, logging is needed. We may also need other features that has other functions.
+
+    \bigskip
+
+    Run everything in synchronous, and the scheduler will blow up. I/O and other things that we need to run is much more expensive then scheduling.
+
+    \bigskip
+
+    As we are already this deep in the rabbit hole we decided to use plugin and dynamic libraries to allow runtime loading.
+
+\end{frame}
+
+\begin{frame}[fragile]{Issues: Logging}
+    \bigskip
+\begin{columns}[T,onlytextwidth]
+
+	\column{0.9\halfwidth}
+	
+	\centering
+	\includegraphics[width=1.02\columnwidth]{img/2part3.png}
+
+	\column{1.1\halfwidth}
+
+    \begin{itemize}
+        \item Only one scheduler will be run, and it is the only plugin to run in sync.
+        \item Other plugins have its own thread spanned by the plugin interface.
+        \item The scheduler can log its decisions into a circular buffer.
+        \item After a time interval, the async plugins receive the head and tail to the circular buffer.
+    \end{itemize}
+
+\end{columns}
+		
+\end{frame}
+
+\begin{frame}[fragile]{Issues: Logging}
+    While we designed the circular buffer to have $500000$ entries to store huge loads, we also introduced a \em debug \em mode:
+    \medskip
+    \begin{itemize}
+        \item In debug mode, the circular buffer will be alloc'ed 1GB in memory, the exact size of a huge transparent page. This currently holds more than 10 million scheduling decisions.
+        \item The logging plugins will not operate regularly.
+        \item Instead, it will only operate on quit of the scheduler plugin.
+        \item This allows us to have a complete log of the scheduling decisions in extended interval.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Final structure}
+
+\begin{columns}[T,onlytextwidth]
+
+	\column{1.5\halfwidth}
+	
+	\centering
+	\includegraphics[width=\columnwidth]{img/2struct.png}
+
+	\column{0.5\halfwidth}
+
+    \bigskip
+    Thus we have discussed all the structure relevant to the plugin system, and can turn back to this picture.
+
+\end{columns}
+    		
+\end{frame}
+
+
+\begin{frame}[fragile]{Lottery}
+
+\begin{columns}[T,onlytextwidth]
+
+	\column{1\halfwidth}
+	
+
+\begin{codetbox}[\footnotesize]{bash}
+compute_0  Sched: 54130
+compute_1  Sched: 51487
+compute_2  Sched: 48143
+compute_3  Sched: 45032
+compute_4  Sched: 40560
+compute_5  Sched: 36630
+compute_6  Sched: 32557
+compute_7  Sched: 28394
+compute_8  Sched: 24328
+compute_9  Sched: 20886
+compute_10 Sched: 17503
+compute_11 Sched: 14884
+compute_12 Sched: 12187
+compute_13 Sched: 10212
+compute_14 Sched: 8246
+compute_15 Sched: 6665
+compute_16 Sched: 5374
+compute_17 Sched: 4367
+compute_18 Sched: 3435
+compute_19 Sched: 2815
+\end{codetbox}
+
+    \column{1\halfwidth}
+        
+\begin{codetbox}[\footnotesize]{bash}
+compute_20 Sched: 2317
+compute_21 Sched: 1837
+compute_22 Sched: 1474
+compute_23 Sched: 1217
+compute_24 Sched: 931
+compute_25 Sched: 761
+compute_26 Sched: 592
+compute_27 Sched: 453
+compute_28 Sched: 376
+compute_29 Sched: 308
+compute_30 Sched: 244
+compute_31 Sched: 168
+compute_32 Sched: 156
+compute_33 Sched: 129
+compute_34 Sched: 136
+compute_35 Sched: 83
+compute_36 Sched: 71
+compute_37 Sched: 61
+compute_38 Sched: 40
+compute_39 Sched: 39
+\end{codetbox}
+
+\end{columns}
+
+\end{frame}
+
+\begin{frame}[fragile]{Reflection}
+
+The final structure of the plugin system is good for:
+\medskip
+\begin{itemize}
+    \item Simpler implementation of a scheduler policy.
+\end{itemize}
+
+\begin{codetbox}{c}
+struct scx_scheduler_plugin_info scx_plugin_info = {
+    .info = {.capability = sched,},
+    .init = fifo_init,
+    .exit = fifo_exit,
+    .enqueue = fifo_enqueue,
+    .dispatch = fifo_dispatch,
+}
+\end{codetbox}
+
+\begin{itemize}
+    \item Plugin everything, slightly modified my teammates' pressure tester C++ and compiled to a dynamic library, and now the test load is also a plugin. 
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]{Reflection}
+
+The final structure of the plugin system is flawed for:
+\medskip
+\begin{itemize}
+    \item There still lacks a command line capability to specify plugins to load.
+    \item There still lacks a fallback mechanism when no scheduler plugin is loaded. Also bug-prone plugins will stuck the whole computer. \em (Pass four null pointers as functions?) \em
+    \item The interface(header) exposed to plugins is currently a bit messy and needs refactoring.
+\end{itemize}
+\medskip 
+That said, these problems exist because of time constraints, and can be solved in future work.
+
+\end{frame}
+
+\begin{frame}[fragile]{Reflection}
+
+Aside from before problems, there are still some questions:
+\medskip
+\begin{itemize}
+    \item In systems with multi CPU it needs fine grained policy and interface.
+    \item How to implement both the core eBPF and the plugin interface for things like:
+    \begin{itemize}
+        \item CPU affinity
+        \item Cache locality
+        \item NUMA nodes
+        \item $\dots$
+    \end{itemize} 
+    \pause
+    \item The aim is to have a scalable and flexible scheduler that has a very reasonable default but gives the flexibility for user to implement specific policies.
+\end{itemize}
+\medskip
+Maybe it is time to turn back to \textcolor{rustorange}{Rust} for help from existing crates?
+\end{frame}
+
+\section{Rust Scheduler}
+
+\begin{frame}{Scheduler in Rust}
+    We can turn our attention to writing the entire scheduler in \textcolor{rustorange}{Rust}.
+
+    \medskip
+    
+    This uses the crate \texttt{scx\_rustland\_core} and \texttt{scx\_utils} to provide the eBPF bindings and the plugin interface.
+    
+    \medskip
+    
+    The main function of these crates is to auto-generate eBPF code and corresponding Rust bindings to let us focus on writing the scheduling policy only.
+\end{frame}
+
+\begin{frame}{A Top-Down Approach}
+\begin{columns}[T,onlytextwidth]
+
+	\column{1.5\halfwidth}
+	
+	\centering
+	\includegraphics[width=\columnwidth]{img/3part1.png}
+
+	\column{0.5\halfwidth}
+
+    \bigskip
+    Instead from the bottom up like in the last part, we start from the top.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Scheduler in Rust}
+    These generated codes can be modified, but we use them more as a reasonable default for our time constraints.
+
+    \bigskip
+
+    We will introduce it in three aspects, compared to my previous C plugin implementation:
+    \begin{itemize}
+        \item How I used this as a basis to build the scheduler in Rust.
+        \item How the abstraction is designed in Rust.
+        \item The similarities in implementation of eBPF.
+    \end{itemize}
+\end{frame}
+
+% \begin{frame}{Building the Scheduler}
+% \begin{columns}[T,onlytextwidth]
+
+% 	\column{1.5\halfwidth}
+	
+% 	\centering
+% 	\includegraphics[width=\columnwidth]{img/3part2.png}
+
+% 	\column{0.5\halfwidth}
+
+%     \bigskip
+%     We first look at how the I built the scheduler policy upon the APIs.
+% \end{columns}
+% \end{frame}
+
+\begin{frame}[fragile]{Scheduler}
+    We start with a Scheduler object: 
+    \begin{codetbox}{rust}
+struct Scheduler<'a> {
+    bpf: BpfScheduler<'a>,  // BPF connector
+    tasks: BTreeSet<Task>,  // tasks ordered by deadline
+    slice_ns: u64,          // Default time slice (in ns)
+}
+    \end{codetbox}
+    and a schedule method:
+    \begin{codetbox}{rust}
+fn schedule(&mut self) {
+    self.enqueue_all_from_bpf();
+    self.dispatch_task_to_bpf(8);
+    // Notify the dispatcher if there are still 
+    // pending tasks to be processed.
+    self.bpf.notify_complete(self.tasks.len() as u64);
+}
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Some Psuedocode}
+    \begin{codetbox}{rust}
+fn enqueue_all_from_bpf(&mut self) {
+    let timestamp = Self::now();
+    loop { match self.bpf.dequeue_task() {
+        Ok(Some(task_in)) => 
+            // Preserve the previous valid deadline
+            let deadline = if task_in.vtime != 0 {
+                task_in.vtime
+            } else { Self::niceness_to_time()};
+            self.tasks.insert(Task);
+        
+        Ok(None) => ...
+        Err(err) => ...
+        }
+    }
+}
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{More Psuedocode}
+    \begin{codetbox}{rust}
+// dispatch some tasks to ebpf
+fn dispatch_task_to_bpf(&mut self, num: u64) {
+    let Some(task) = self.tasks.pop_first() else {
+        break;
+    };
+    let mut dispatched_task = 
+        DispatchedTask::new(&task.qtask);
+
+    dispatched_task.slice_ns = ...
+    dispatched_task.vtime = task.deadline;
+    dispatched_task.cpu = ...
+
+    // Send the task to the BPF dispatcher.
+    if self.bpf.dispatch_task(&dispatched_task).is_err()
+        // Dispatching failed: reinsert the task
+        self.tasks.insert(task); break;
+}
+    \end{codetbox}
+\end{frame}
+
+
+
+\begin{frame}[fragile]{EDF}
+\begin{columns}[T,onlytextwidth]
+
+    \column{1\halfwidth}
+    
+\begin{codetbox}[\footnotesize]{bash}
+compute_0  Sched: 54034
+compute_1  Sched: 52112
+compute_2  Sched: 51831
+compute_3  Sched: 45332
+compute_4  Sched: 50409
+compute_5  Sched: 47692
+compute_6  Sched: 41756
+compute_7  Sched: 37856
+compute_8  Sched: 32610
+compute_9  Sched: 25936
+compute_10 Sched: 21448
+compute_11 Sched: 16813
+compute_12 Sched: 13327
+compute_13 Sched: 10580
+compute_14 Sched: 8318
+compute_15 Sched: 6160
+compute_16 Sched: 4944
+compute_17 Sched: 4523
+compute_18 Sched: 3201
+compute_19 Sched: 3052
+\end{codetbox}
+
+    \column{1\halfwidth}
+        
+\begin{codetbox}[\footnotesize]{bash}
+compute_20 Sched: 2473
+compute_21 Sched: 2018
+compute_22 Sched: 1428
+compute_23 Sched: 1405
+compute_24 Sched: 1129
+compute_25 Sched: 933
+compute_26 Sched: 766
+compute_27 Sched: 642
+compute_28 Sched: 527
+compute_29 Sched: 402
+compute_30 Sched: 396
+compute_31 Sched: 273
+compute_32 Sched: 281
+compute_33 Sched: 186
+compute_34 Sched: 154
+compute_35 Sched: 171
+compute_36 Sched: 123
+compute_37 Sched: 105
+compute_38 Sched: 105
+compute_39 Sched: 69
+\end{codetbox}
+
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{scx\_rustland\_core's implementation}
+    Now we can turn to the implementation of \texttt{scx\_rustland\_core}'s bpf.rs and see how it abstracts away the eBPF code.
+
+    Similarly, it also uses objects to represent the BPF scheduler.
+\end{frame}
+
+\begin{frame}[fragile]{scx\_rustland\_core's implementation}
+    \begin{codetbox}{rust}
+pub struct BpfScheduler<'cb> {
+    pub skel: BpfSkel<'cb>,                
+        // low level BPF skeleton
+    shutdown: Arc<AtomicBool>,             
+        // Atomic flag for shutdown
+    queued: libbpf_rs::RingBuffer<'cb>,
+    dispatched: libbpf_rs::UserRingBuffer,
+    struct_ops: Option<libbpf_rs::Link>,   
+        // Low level BPF methods
+}    
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Abstraction Layer: Task Reception}
+    \textbf{Task Dequeue Abstraction}
+    \begin{codetbox}[\footnotesize]{rust}
+pub fn dequeue_task(&mut self) -> Result<Option<QueuedTask>, i32>
+    \end{codetbox}
+    
+    \bigskip
+
+    \textbf{Task Dispatch Abstraction}
+    \begin{codetbox}[\footnotesize]{rust}
+pub fn dispatch_task(&mut self, task: &DispatchedTask) 
+    -> Result<(), libbpf_rs::Error>
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Abstraction Layer: Counter Management}
+    \textbf{Type-Safe Counter Access}
+    \begin{codetbox}[\footnotesize]{rust}
+pub fn nr_queued_mut(&mut self) -> &mut u64
+pub fn nr_scheduled_mut(&mut self) -> &mut u64
+pub fn nr_user_dispatches_mut(&mut self) -> &mut u64
+// ... other counter methods
+    \end{codetbox}
+    
+    \bigskip
+    \begin{itemize}
+        \item Type-safe counter access without manual offset calculations
+        \item Direct mapping to BPF memory regions
+        \item Eliminates pointer arithmetic and memory safety risks
+        \item Automatic synchronization with kernel space
+    \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Abstraction Layer: Completion Notification}
+    \textbf{Completion Notification Abstraction}
+    \begin{codetbox}[\footnotesize]{rust}
+pub fn notify_complete(&mut self, nr_pending: u64)
+    \end{codetbox}
+    
+    \bigskip
+    \begin{itemize}
+        \item Notifies BPF that userspace scheduler completed scheduling cycle
+        \item Updates count of pending tasks
+        \item Prevents unnecessary BPF busy-looping
+    \end{itemize}
+    \bigskip
+\end{frame}
+
+\begin{frame}{eBPF implementation details}
+    Now we can turn our attention to the eBPF implementation details, which is also in C.
+    
+    \bigskip
+
+    The eBPF implementation in here, while much more detailed, on a higher perspective is similar to that in C plugin:
+    \begin{itemize}
+        \item Both uses two ringbuf to pass data between kernel and userspace.
+        \item Both mostly passes structs to userspace and gets information back.
+    \end{itemize}
+    \bigskip
+\end{frame}
+
+
+\begin{frame}[fragile]{Differences: Wakeup Logic}
+    Multi-Level Prevention Strategy
+    
+    \bigskip
+    1. Atomic Flag Notification:
+    \begin{codetbox}[\footnotesize]{rust}
+volatile u32 usersched_needed;      // atomic flag
+set_usersched_needed();             // atomic OR
+test_and_clear_usersched_needed();  // atomic AND
+    \end{codetbox}
+    
+    2. Heartbeat Timer Mechanism:
+    \begin{codetbox}[\footnotesize]{rust}
+usersched_timer_fn();  // checks every USERSCHED_TIMER_NS (1 sec)
+if (scheduler inactive > 1 sec) {
+    set_usersched_needed();  // wake scheduler
+    kick CPU;
+}
+    \end{codetbox}
+\end{frame}
+
+\begin{frame}[fragile]{Differences: Wakeup Logic}    
+    3. Dedicated DSQ for Scheduler:
+    \begin{codetbox}[\footnotesize]{rust}
+#define SCHED_DSQ (MAX_CPUS + 1)  // dedicated queue
+// In rustland_enqueue(): place scheduler task in SCHED_DSQ
+// In rustland_dispatch(): only dispatch from SCHED_DSQ if needed
+    \end{codetbox}
+    
+    4. Comprehensive Wakeup Check:
+    \begin{codetbox}[\footnotesize]{rust}
+bool usersched_has_pending_tasks() {
+    return atomic_flag(usersched_needed) ||
+           nr_scheduled > 0 ||
+           bpf_ringbuf_query(&queued, BPF_RB_AVAIL_DATA);
+}
+    \end{codetbox}
+    \bigskip
+    Result: Scheduler only wakes when there is actual work; reduces unnecessary context switches.
+\end{frame}
+
+
+\begin{frame}{Personal thoughts on Rust}
+    \begin{itemize}
+        \item It is still very dependent on C eBPF to get the \textbf{mechanism} running in kernel space.
+        \item But through this plugin method we can make actual \textbf{policy} in any way (language, method, framework) we like.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Personal thoughts on Rust}
+    \begin{itemize}
+        \item The ecosystem/build system of Rust makes it possible to import existing frameworks quickly and easily, which is the core advantages compared to C. 
+        \item And it has second best ecosystem and community only to C, an advantage over other languages.
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{Personal thoughts on Rust}
+    \begin{itemize}
+        \item Along with other modern features it is easy to play around, build and extend without reinventing the wheel for everything like in C.
+        \begin{itemize}
+            \item Quickly try new policies
+            \item Use different data structures
+            \item Different logging methods
+            \item $\cdots$
+        \end{itemize}
+        \item That said Rust is indeed hard to learn.
+        \item To understand eBPF it is better to at least write a working plugin architecture from the ground up like what I did in C plugin, and then turn to higher-level abstractions.
+    \end{itemize}
+\end{frame}
+
+
+% \begin{frame}[fragile]{Frame Title}
+%     Placeholder for wrapping function:
+%     \begin{codetbox}{elm}
+% -- Elm code example
+%     \end{codetbox}
+%     New call function:
+%     \begin{codetbox}{elm}
+% -- Elm code example
+%     \end{codetbox}
+%     \pause
+%     Issue 2: Placeholder for issue description.
+% \end{frame}
+
+% \begin{frame}[fragile]{Frame Title}
+%     Placeholder for logic extraction:
+%     \begin{codetbox}{elm}
+% -- Elm code example
+%     \end{codetbox}
+%     Here transform can be fed with calculation functions.
+% \end{frame}
+
+% \begin{frame}[fragile]{Frame Title}
+%     Change the remaining part of the code accordingly:
+%     \begin{codetbox}{elm}
+% -- Elm code example
+%     \end{codetbox}
+% \end{frame}
+
+% \begin{frame}[fragile]{Frame Title}
+%     Change call function for better readability:
+%     \begin{codetbox}{elm}
+% -- Elm code example
+%     \end{codetbox}
+%     \pause
+%     This is called the \textit{Monadic} style.
+%     \pause
+%     Placeholder for explanation of differences and extensibility.
+% \end{frame}
+
+% \begin{frame}{Exercise}
+%     \begin{itemize}
+%         \item Add new functions and modify call functions to test them.
+%         \item Find the similarities between the examples.
+%     \end{itemize}
+% \end{frame}
+
+% \begin{frame}{Frame Title}
+%     Placeholder for similarities and explanation.
+%     \medskip\pause
+%     Placeholder for further explanation.
+%     \medskip\pause
+%     \em Placeholder for quote. \em
+% \end{frame}
+
+% \section{Section}
+
+% \begin{frame}{Frame Title}
+%     A monad contains three things:
+%     \begin{itemize}
+%         \item \textbf{A type constructor} placeholder.
+%         \item \textbf{A function} placeholder.
+%         \item \textbf{A function} placeholder.
+%     \end{itemize}
+%     \medskip\pause
+
+%     \em Identify the three components in the examples above. \em
+%     \medskip\pause
+
+%     \em Placeholder for quote. \em
+% \end{frame}
+
+% \begin{frame}[fragile]{Frame Title}
+%     Placeholder for monad exercise and explanation.
+
+%     \medskip\pause
+
+%     \textbf{Exercise:}
+%     List is also a Monad! Try to find the constructor, return and bind functions for it. Then, write a function that returns a list of all possible results of multiplying two integers in two respective lists.
+
+%     \textbf{Hint}: Placeholder for hint.
+% \end{frame}
+
+% \begin{frame}[fragile]{Frame Title}
+%     Placeholder for package installation and usage.
+%     \begin{codetbox}{bash}
+% elm install package/name
+%     \end{codetbox}
+%     \begin{codetbox}{elm}
+% import Module.Name exposing (..)
+%     \end{codetbox}
+%     \medskip\pause
+%     \em Rewrite the previous exercise with the package. \em
+% \end{frame}
+
+% \begin{frame}{Frame Title}
+%     \begin{itemize}
+%         \item Placeholder for general design pattern explanation.
+%         \item Placeholder for interface/abstract class analogy.
+%         \item Placeholder for multiple monads for one container type.
+%         \item Placeholder for helper functions.
+%     \end{itemize}
+% \end{frame}
+
+% \begin{framek}[Conclusion]
+%     Placeholder for conclusion and further resources.
+%     \medskip
+%     \begin{itemize}
+%         \item Youtube. \href{https://www.youtube.com/}{Video Title}
+%         \item Wiki. \href{https://wiki.example.com/}{Wiki Title}
+%         \item Wikipedia. \href{https://en.wikipedia.org/}{Wikipedia Title}
+%     \end{itemize}
+% \end{framek}
+
+\thankframe
+
+\begin{frame}{Appendix: Agile Development}
+    We tried our best to follow agile development practices, communication guidelines, etc.
+
+    We also used git hooks for commit checking to ensure atomic commit.
+
+    We only broke a few times mainly due to copying infrastructure code around.
+\end{frame}
+
+\begin{frame}{Appendix: Contribution}
+    The contribution on gitea is not proportional, as I did a lot of work that was not strictly required.
+
+    Some code was copied over and over in different parts of the project, especially in the C plugin part.
+
+    Rust configuration and copied build scripts also took a some commits.
+\end{frame}
+
+\end{document}
+
